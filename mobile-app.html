@@ -1,0 +1,303 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>家計管理アプリ</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: #f5f5f5; }
+.header { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 20px; text-align: center; position: sticky; top: 0; z-index: 100; box-shadow: 0 2px 8px rgba(0,0,0,0.2); }
+.header h1 { font-size: 24px; margin-bottom: 5px; }
+.tabs { display: flex; background: white; border-bottom: 2px solid #eee; position: sticky; top: 70px; z-index: 99; }
+.tab { flex: 1; padding: 15px; text-align: center; border: none; background: white; font-size: 16px; cursor: pointer; }
+.tab.active { background: #3498db; color: white; font-weight: bold; }
+.screen { display: none; padding: 20px; }
+.screen.active { display: block; }
+.card { background: white; padding: 20px; border-radius: 12px; margin-bottom: 15px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
+.card h2 { font-size: 18px; margin-bottom: 15px; color: #333; }
+.form-group { margin-bottom: 15px; }
+.form-group label { display: block; margin-bottom: 5px; font-weight: bold; color: #333; font-size: 14px; }
+.form-group input, .form-group select, .form-group textarea { width: 100%; padding: 12px; font-size: 16px; border: 1px solid #ddd; border-radius: 8px; }
+.btn { width: 100%; padding: 15px; font-size: 16px; font-weight: bold; border: none; border-radius: 8px; cursor: pointer; margin-top: 10px; }
+.btn-primary { background: #3498db; color: white; }
+.btn-success { background: #4caf50; color: white; }
+.stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 20px; }
+.stat { background: white; padding: 15px; border-radius: 8px; text-align: center; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
+.stat-label { font-size: 12px; color: #666; margin-bottom: 5px; }
+.stat-value { font-size: 20px; font-weight: bold; }
+.income { color: #4caf50; }
+.expense { color: #f44336; }
+.balance { color: #2196f3; }
+.item { padding: 15px; border-bottom: 1px solid #eee; }
+.item:last-child { border-bottom: none; }
+.item-header { display: flex; justify-content: space-between; margin-bottom: 5px; }
+.item-title { font-weight: bold; }
+.item-amount { font-size: 18px; font-weight: bold; }
+.item-detail { font-size: 14px; color: #666; }
+.message { padding: 15px; border-radius: 8px; margin-bottom: 15px; }
+.message.success { background: #d4edda; color: #155724; }
+.message.error { background: #f8d7da; color: #721c24; }
+.category-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }
+.category-btn { padding: 12px; border: 2px solid #ddd; border-radius: 8px; background: white; font-size: 14px; cursor: pointer; }
+.category-btn.selected { border-color: #3498db; background: #e3f2fd; font-weight: bold; }
+</style>
+</head>
+<body>
+<div class="header">
+<h1>💰 家計管理</h1>
+<p id="syncStatus">オフライン</p>
+</div>
+
+<div class="tabs">
+<button class="tab active" onclick="showTab('dashboard')">📊 ホーム</button>
+<button class="tab" onclick="showTab('expense')">💳 支出</button>
+<button class="tab" onclick="showTab('income')">💵 収入</button>
+</div>
+
+<div id="dashboard" class="screen active">
+<div class="stats">
+<div class="stat"><div class="stat-label">収入</div><div class="stat-value income" id="totalIncome">¥0</div></div>
+<div class="stat"><div class="stat-label">支出</div><div class="stat-value expense" id="totalExpense">¥0</div></div>
+<div class="stat"><div class="stat-label">収支</div><div class="stat-value balance" id="totalBalance">¥0</div></div>
+</div>
+
+<div class="card">
+<h2>📊 今月の収支</h2>
+<div class="stat"><div class="stat-label">収入</div><div class="stat-value income" id="monthIncome">¥0</div></div>
+<div class="stat" style="margin-top: 10px;"><div class="stat-label">支出</div><div class="stat-value expense" id="monthExpense">¥0</div></div>
+<div class="stat" style="margin-top: 10px;"><div class="stat-label">収支</div><div class="stat-value balance" id="monthBalance">¥0</div></div>
+</div>
+
+<div class="card">
+<h2>📋 最近の支出</h2>
+<div id="recentExpenses">読み込み中...</div>
+</div>
+
+<button class="btn btn-primary" onclick="loadFromOneDrive()">🔄 OneDriveから読み込み</button>
+<button class="btn btn-success" onclick="saveToOneDrive()">☁️ OneDriveに保存</button>
+</div>
+
+<div id="expense" class="screen">
+<div id="expenseMessage"></div>
+<div class="card">
+<h2>💳 支出を記録</h2>
+<form id="expenseForm" onsubmit="addExpense(event)">
+<div class="form-group"><label>日付</label><input type="date" id="expenseDate" required></div>
+<div class="form-group"><label>カテゴリ</label><div class="category-grid" id="categoryButtons"></div></div>
+<input type="hidden" id="selectedCategory">
+<div class="form-group"><label>品目</label><input type="text" id="expenseItem" placeholder="例: スーパーで買い物" required></div>
+<div class="form-group"><label>金額（円）</label><input type="number" id="expenseAmount" placeholder="3200" min="0" required></div>
+<div class="form-group"><label>メモ（任意）</label><textarea id="expenseMemo" rows="2"></textarea></div>
+<button type="submit" class="btn btn-primary">保存</button>
+</form>
+</div>
+</div>
+
+<div id="income" class="screen">
+<div id="incomeMessage"></div>
+<div class="card">
+<h2>💵 収入を記録</h2>
+<form id="incomeForm" onsubmit="addIncome(event)">
+<div class="form-group"><label>年月</label><input type="month" id="incomeMonth" required></div>
+<div class="form-group"><label>種別</label><select id="incomeType" required><option value="給与">給与</option><option value="副収入">副収入</option><option value="賞与">賞与</option><option value="その他">その他</option></select></div>
+<div class="form-group"><label>金額（円）</label><input type="number" id="incomeAmount" placeholder="450000" min="0" required></div>
+<div class="form-group"><label>メモ（任意）</label><input type="text" id="incomeMemo"></div>
+<button type="submit" class="btn btn-primary">保存</button>
+</form>
+</div>
+</div>
+
+<script>
+const categories = [
+  {id:'c01',name:'食費（自炊）'},{id:'c02',name:'食費（外食）'},{id:'c03',name:'日用品'},{id:'c04',name:'光熱費'},
+  {id:'c05',name:'通信費'},{id:'c06',name:'交通費'},{id:'c07',name:'医療費'},{id:'c08',name:'衣服・美容'},
+  {id:'c09',name:'娯楽・趣味'},{id:'c10',name:'交際費'},{id:'c11',name:'教育費'},{id:'c12',name:'住居費'},
+  {id:'c13',name:'保険料'},{id:'c14',name:'車両費'},{id:'c15',name:'税金'},{id:'c16',name:'貯蓄・投資'},
+  {id:'c17',name:'書籍'},{id:'c18',name:'家具・家電'},{id:'c19',name:'旅行'},{id:'c20',name:'ペット'},
+  {id:'c21',name:'冠婚葬祭'},{id:'c22',name:'その他'}
+];
+
+let purchases = [];
+let income = [];
+
+function init() {
+  const today = new Date().toISOString().split('T')[0];
+  const thisMonth = new Date().toISOString().substring(0, 7);
+  document.getElementById('expenseDate').value = today;
+  document.getElementById('incomeMonth').value = thisMonth;
+  
+  const grid = document.getElementById('categoryButtons');
+  grid.innerHTML = categories.map(c => 
+    '<button type="button" class="category-btn" onclick="selectCategory(\''+c.id+'\')">'+c.name+'</button>'
+  ).join('');
+  
+  loadLocalData();
+  updateDashboard();
+}
+
+function showTab(tabName) {
+  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.getElementById(tabName).classList.add('active');
+  event.target.classList.add('active');
+}
+
+function selectCategory(id) {
+  document.querySelectorAll('.category-btn').forEach(b => b.classList.remove('selected'));
+  event.target.classList.add('selected');
+  document.getElementById('selectedCategory').value = id;
+}
+
+function addExpense(e) {
+  e.preventDefault();
+  const categoryId = document.getElementById('selectedCategory').value;
+  if (!categoryId) {
+    showMessage('expenseMessage', 'カテゴリを選択してください', 'error');
+    return;
+  }
+  
+  const newPurchase = {
+    id: 'p' + Date.now(),
+    date: document.getElementById('expenseDate').value,
+    categoryId: categoryId,
+    item: document.getElementById('expenseItem').value,
+    amount: parseFloat(document.getElementById('expenseAmount').value),
+    userId: 'u001',
+    memo: document.getElementById('expenseMemo').value,
+    createdAt: new Date().toISOString()
+  };
+  
+  purchases.push(newPurchase);
+  saveLocalData();
+  showMessage('expenseMessage', '✅ 保存しました（OneDriveに保存してください）', 'success');
+  document.getElementById('expenseForm').reset();
+  document.querySelectorAll('.category-btn').forEach(b => b.classList.remove('selected'));
+  init();
+  updateDashboard();
+}
+
+function addIncome(e) {
+  e.preventDefault();
+  const newIncome = {
+    id: 'i' + Date.now(),
+    yearMonth: document.getElementById('incomeMonth').value,
+    type: document.getElementById('incomeType').value,
+    amount: parseFloat(document.getElementById('incomeAmount').value),
+    userId: 'u001',
+    memo: document.getElementById('incomeMemo').value,
+    createdAt: new Date().toISOString()
+  };
+  
+  income.push(newIncome);
+  saveLocalData();
+  showMessage('incomeMessage', '✅ 保存しました（OneDriveに保存してください）', 'success');
+  document.getElementById('incomeForm').reset();
+  init();
+  updateDashboard();
+}
+
+function saveLocalData() {
+  localStorage.setItem('purchases', JSON.stringify(purchases));
+  localStorage.setItem('income', JSON.stringify(income));
+}
+
+function loadLocalData() {
+  purchases = JSON.parse(localStorage.getItem('purchases') || '[]');
+  income = JSON.parse(localStorage.getItem('income') || '[]');
+}
+
+function updateDashboard() {
+  const totalIncome = income.reduce((s, i) => s + i.amount, 0);
+  const totalExpense = purchases.reduce((s, p) => s + p.amount, 0);
+  const totalBalance = totalIncome - totalExpense;
+  
+  document.getElementById('totalIncome').textContent = '¥' + totalIncome.toLocaleString();
+  document.getElementById('totalExpense').textContent = '¥' + totalExpense.toLocaleString();
+  document.getElementById('totalBalance').textContent = '¥' + totalBalance.toLocaleString();
+  
+  const thisMonth = new Date().toISOString().substring(0, 7);
+  const monthIncome = income.filter(i => i.yearMonth === thisMonth).reduce((s, i) => s + i.amount, 0);
+  const monthPurchases = purchases.filter(p => p.date.startsWith(thisMonth));
+  const monthExpense = monthPurchases.reduce((s, p) => s + p.amount, 0);
+  
+  document.getElementById('monthIncome').textContent = '¥' + monthIncome.toLocaleString();
+  document.getElementById('monthExpense').textContent = '¥' + monthExpense.toLocaleString();
+  document.getElementById('monthBalance').textContent = '¥' + (monthIncome - monthExpense).toLocaleString();
+  
+  const recent = purchases.sort((a,b) => new Date(b.date) - new Date(a.date)).slice(0, 10);
+  document.getElementById('recentExpenses').innerHTML = recent.map(p => {
+    const cat = categories.find(c => c.id === p.categoryId);
+    return '<div class="item"><div class="item-header"><span class="item-title">'+p.item+'</span><span class="item-amount expense">¥'+p.amount.toLocaleString()+'</span></div><div class="item-detail">'+p.date+' | '+(cat?cat.name:'')+'</div></div>';
+  }).join('') || '<p style="text-align:center;color:#666;">データがありません</p>';
+}
+
+async function loadFromOneDrive() {
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.accept = '.json';
+  input.multiple = true;
+  input.onchange = async (e) => {
+    const files = Array.from(e.target.files);
+    for (const file of files) {
+      const text = await file.text();
+      const data = JSON.parse(text);
+      if (file.name.includes('purchase')) purchases = data;
+      if (file.name.includes('income')) income = data;
+    }
+    saveLocalData();
+    updateDashboard();
+    alert('✅ OneDriveから読み込みました');
+  };
+  input.click();
+}
+
+function saveToOneDrive() {
+  const purchaseBlob = new Blob([JSON.stringify(purchases, null, 2)], {type: 'application/json'});
+  const incomeBlob = new Blob([JSON.stringify(income, null, 2)], {type: 'application/json'});
+  
+  if (navigator.share) {
+    const purchaseFile = new File([purchaseBlob], 'purchases.json', {type: 'application/json'});
+    const incomeFile = new File([incomeBlob], 'income.json', {type: 'application/json'});
+    
+    navigator.share({
+      files: [purchaseFile, incomeFile],
+      title: '家計データ',
+      text: 'OneDriveのKakeiboApp/KakeiboDataフォルダに保存してください'
+    }).then(() => {
+      alert('✅ OneDriveに保存してください');
+    }).catch(err => {
+      fallbackDownload();
+    });
+  } else {
+    fallbackDownload();
+  }
+}
+
+function fallbackDownload() {
+  const purchaseUrl = URL.createObjectURL(new Blob([JSON.stringify(purchases, null, 2)], {type: 'application/json'}));
+  const incomeUrl = URL.createObjectURL(new Blob([JSON.stringify(income, null, 2)], {type: 'application/json'}));
+  
+  const a1 = document.createElement('a');
+  a1.href = purchaseUrl;
+  a1.download = 'purchases.json';
+  a1.click();
+  
+  const a2 = document.createElement('a');
+  a2.href = incomeUrl;
+  a2.download = 'income.json';
+  a2.click();
+  
+  alert('ダウンロードしたファイルをOneDriveのKakeiboApp/KakeiboDataフォルダにアップロードしてください');
+}
+
+function showMessage(id, msg, type) {
+  const el = document.getElementById(id);
+  el.innerHTML = '<div class="message '+type+'">'+msg+'</div>';
+  setTimeout(() => el.innerHTML = '', 3000);
+}
+
+init();
+</script>
+</body>
+</html>
